@@ -2,6 +2,7 @@ import os
 import json
 from flask import Flask, render_template, request, redirect, url_for, send_from_directory, jsonify, session
 from werkzeug.utils import secure_filename
+from flask import send_file
 
 app = Flask(__name__)
 app.secret_key = 'super_secret_instructor_key_change_me'
@@ -17,11 +18,11 @@ if not os.path.exists(UPLOAD_FOLDER):
 
 DEFAULT_CLASSES = {
     "Class 01": {
-        "password": "pass01",
+        "password": "Apple1",
         "pdfs": []
     },
     "Class 03": {
-        "password": "pass03",
+        "password": "Banana2",
         "pdfs": []
     }
 }
@@ -56,6 +57,17 @@ def load_annotations_data():
 def save_annotations_data(data):
     with open(DATA_FILE, 'w') as f:
         json.dump(data, f, indent=4)
+
+@app.route('/admin/download-annotations')
+def download_annotations():
+    if not session.get('is_admin'):
+        return "Unauthorized", 403
+    
+    # Ensure annotations.json exists before sending
+    if not os.path.exists(DATA_FILE):
+        save_annotations_data({})
+        
+    return send_file(DATA_FILE, as_attachment=True, download_name='annotations_backup.json')
 
 @app.route('/')
 def index():
