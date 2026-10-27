@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Classroom PDF Hub</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #fdfdfd; color: #333; }
+        .hub-card { background: #ffffff; padding: 40px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px rgba(0,0,0,0.02); text-align: center; width: 380px; position: relative; }
+        h1 { color: #1e293b; font-size: 1.5rem; margin-bottom: 24px; }
+        .class-btn { display: block; width: 100%; background: #2563eb; color: white; border: none; padding: 12px; border-radius: 6px; font-size: 1rem; font-weight: 500; cursor: pointer; margin-bottom: 14px; transition: background 0.2s; }
+        .class-btn:hover { background: #1d4ed8; }
+        
+        .admin-lock { position: absolute; top: 12px; left: 16px; background: none; border: none; font-size: 0.9rem; cursor: pointer; opacity: 0.2; transition: opacity 0.2s; }
+        .admin-lock:hover { opacity: 1; }
+
+        .admin-panel { display: none; margin-top: 20px; padding-top: 20px; border-top: 1px dashed #cbd5e1; text-align: left; font-size: 0.85rem; }
+        .admin-panel select, .admin-panel input { width: 100%; padding: 6px; margin-top: 6px; margin-bottom: 10px; border: 1px solid #cbd5e1; border-radius: 4px; }
+        .admin-panel button { background: #475569; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+    <div class="hub-card">
+        <button class="admin-lock" onclick="triggerAdmin()" title="Portal">🔒</button>
+
+        <h1>Classroom Reading Hub</h1>
+        
+        <button class="class-btn" onclick="accessClass('Class 01')">Class 01</button>
+        <button class="class-btn" onclick="accessClass('Class 03')">Class 03</button>
+
+        <div class="admin-panel" id="admin-panel">
+            <strong>Instructor Controls</strong>
+            <form action="/upload" method="post" enctype="multipart/form-data">
+                <label>Target Class:</label>
+                <select name="class_name" required>
+                    <option value="Class 01">Class 01</option>
+                    <option value="Class 03">Class 03</option>
+                </select>
+                <label>Upload PDF Document:</label>
+                <input type="file" name="file" accept=".pdf" required>
+                <button type="submit">Upload File</button>
+            </form>
+            <button onclick="logoutAdmin()" style="margin-top: 10px; background: #dc2626;">Lock Admin Mode</button>
+        </div>
+    </div>
+
+    <script>
+        async function accessClass(className) {
+            const pwd = prompt(`Enter passcode for ${className}:`);
+            if (!pwd) return;
+
+            const res = await fetch('/verify-class', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ className, password: pwd })
+            });
+
+            const data = await res.json();
+            if (data.success) {
+                // Redirects to Class Dashboard
+                window.location.href = `/class/${className}`;
+            } else {
+                alert("Incorrect password. Please try again.");
+            }
+        }
+
+        async function triggerAdmin() {
+            const pwd = prompt("Enter passcode:");
+            if (!pwd) return;
+
+            const res = await fetch('/verify-admin', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ password: pwd })
+            });
+
+            const data = await res.json();
+            if (data.success) {
+                document.getElementById('admin-panel').style.display = 'block';
+                alert("Admin mode activated.");
+            } else {
+                alert("Access denied.");
+            }
+        }
+
+        async function logoutAdmin() {
+            await fetch('/logout-admin', { method: 'POST' });
+            document.getElementById('admin-panel').style.display = 'none';
+            alert("Admin mode locked.");
+        }
+
+        window.onload = async () => {
+            const res = await fetch('/check-admin');
+            const data = await res.json();
+            if (data.isAdmin) {
+                document.getElementById('admin-panel').style.display = 'block';
+            }
+        };
+    </script>
+</body>
+</html>

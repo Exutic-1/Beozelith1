@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Annotate: {{ filename }}</title>
+    <!-- Include PDF.js from CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    </script>
+    <style>
+        * { box-sizing: border-box; }
+        body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; height: 100vh; background: #e2e8f0; color: #1e293b; overflow: hidden; }
+        
+        .sidebar { width: 400px; background: #ffffff; border-left: 1px solid #cbd5e1; display: flex; flex-direction: column; height: 100%; box-shadow: -2px 0 5px rgba(0,0,0,0.05); z-index: 10; }
+        .sidebar-header { padding: 16px; border-bottom: 1px solid #e2e8f0; background: #f8fafc; }
+        .sidebar-header h2 { font-size: 1.1rem; margin: 0 0 4px 0; }
+        .sidebar-header a { font-size: 0.85rem; color: #2563eb; text-decoration: none; }
+        
+        .tool-bar { padding: 12px 16px; background: #f1f5f9; border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; justify-content: space-between; }
+        .tool-btn { background: #fff; border: 1px solid #cbd5e1; padding: 6px 12px; border-radius: 4px; font-size: 0.85rem; font-weight: 500; cursor: pointer; display: flex; align-items: center; gap: 6px; }
+        .tool-btn.active { background: #2563eb; color: #fff; border-color: #2563eb; }
+
+        .comments-list { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+        .comment-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px; font-size: 0.9rem; cursor: pointer; transition: all 0.2s; position: relative; }
+        .comment-card:hover { border-color: #2563eb; box-shadow: 0 2px 4px rgba(37,99,235,0.1); }
+        .comment-card.highlighted { border-color: #2563eb; background: #eff6ff; box-shadow: 0 0 0 2px rgba(37,99,235,0.2); }
+        
+        .comment-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+        .comment-author { font-weight: 600; color: #0f172a; font-size: 0.8rem; }
+        .delete-btn { background: none; border: none; color: #94a3b8; cursor: pointer; font-size: 0.8rem; padding: 2px 6px; border-radius: 4px; }
+        .delete-btn:hover { background: #fee2e2; color: #dc2626; }
+        
+        .replies-container { margin-top: 8px; padding-left: 10px; border-left: 2px solid #cbd5e1; display: flex; flex-direction: column; gap: 6px; }
+        .reply-item { font-size: 0.85rem; background: #fff; padding: 6px 8px; border-radius: 4px; border: 1px solid #e2e8f0; }
+        .reply-author { font-weight: 600; font-size: 0.75rem; color: #334155; }
+        
+        .reply-input-box { margin-top: 8px; display: flex; gap: 4px; }
+        .reply-input-box input { flex: 1; padding: 4px 8px; font-size: 0.8rem; border: 1px solid #cbd5e1; border-radius: 4px; }
+        .reply-input-box button { padding: 4px 8px; font-size: 0.8rem; background: #475569; color: white; border: none; border-radius: 4px; cursor: pointer; }
+
+        .comment-form { padding: 16px; border-top: 1px solid #e2e8f0; background: #f8fafc; display: flex; flex-direction: column; gap: 8px; }
+        .comment-form input, .comment-form textarea { width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px; font-family: inherit; font-size: 0.9rem; }
+        .comment-form button { background: #2563eb; color: white; border: none; padding: 10px 16px; border-radius: 4px; font-weight: 500; cursor: pointer; transition: background 0.2s; }
+        .comment-form button:disabled { background: #cbd5e1; cursor: not-allowed; }
+        
+        .viewer-container { flex: 1; height: 100%; position: relative; overflow-y: auto; background: #525659; display: flex; flex-direction: column; align-items: center; padding: 20px; gap: 20px; }
+        
+        .pdf-page-wrapper {
+            position: relative;
+            background: white;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+        }
+        canvas { display: block; }
+
+        .viewer-container.placing-mode .pdf-page-wrapper {
+            cursor: crosshair !important;
+        }
+
+        /* Sticky note pins */
+        .sticky-pin {
+            position: absolute;
+            width: 28px;
+            height: 28px;
+            background: rgba(234, 179, 8, 0.9);
+            border: 1px solid #ca8a04;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.75rem;
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            transition: transform 0.15s, background 0.15s;
+            z-index: 5;
+            transform: translate(-50%, -50%);
+        }
+        .sticky-pin:hover {
+            transform: translate(-50%, -50%) scale(1.15);
+            background: rgba(250, 204, 21, 1);
+        }
+
+        /* Perfectly centered Placeholder Lightbulb */
+        .placeholder-pin {
+            position: absolute;
+            width: 32px;
+            height: 32px;
+            background: rgba(59, 130, 246, 0.9);
+            border: 2px solid #1d4ed8;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.9rem;
+            box-shadow: 0 0 10px rgba(59, 130, 246, 0.6);
+            animation: pulse 1.5s infinite;
+            z-index: 6;
+            transform: translate(-50%, -50%);
+        }
+        @keyframes pulse {
+            0% { transform: translate(-50%, -50%) scale(0.9); box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7); }
+            70% { transform: translate(-50%, -50%) scale(1.1); box-shadow: 0 0 0 8px rgba(59, 130, 246, 0); }
+            100% { transform: translate(-50%, -50%) scale(0.9); box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="viewer-container" id="viewer-container">
+        <div id="pdf-viewer-root" style="display: flex; flex-direction: column; gap: 20px;"></div>
+    </div>
+
+    <div class="sidebar">
+        <div class="sidebar-header">
+            <h2>Discussion & Notes</h2>
+            <a href="/">← Back to Document Hub</a>
+        </div>
+        
+        <div class="tool-bar">
+            <span style="font-size: 0.85rem; color: #475569;" id="mode-label">Tool: Navigation</span>
+            <button class="tool-btn" id="place-mode-btn" onclick="togglePlacingMode()">📌 Place Sticky Note</button>
+        </div>
+
+        <div class="comments-list" id="comments-list"></div>
+
+        <div class="comment-form">
+            <div style="font-size: 0.8rem; color: #64748b;" id="selection-status">Click "Place Sticky Note" to drop a pin on the document.</div>
+            <input type="text" id="author-input" placeholder="Your Name (Optional)">
+            <textarea id="comment-input" rows="3" placeholder="Write your note here..." disabled></textarea>
+            <button id="post-btn" onclick="postComment()" disabled>Post Note</button>
+        </div>
+    </div>
+
+    <script>
+        let userIsAdmin = false;
+
+		async function checkAdminStatus() {
+			const res = await fetch('/check-admin');
+			const data = await res.json();
+			userIsAdmin = data.isAdmin;
+		}
+		
+		const filename = "{{ filename }}";
+        let isPlacingMode = false;
+        let pendingPlacement = null;
+        const url = "{{ url_for('view_pdf', filename=filename) }}";
+        let pdfDocGlobal = null;
+
+        async function renderPDF() {
+            const loadingTask = pdfjsLib.getDocument(url);
+            pdfDocGlobal = await loadingTask.promise;
+            const root = document.getElementById('pdf-viewer-root');
+
+            for (let pageNum = 1; pageNum <= pdfDocGlobal.numPages; pageNum++) {
+                const page = await pdfDocGlobal.getPage(pageNum);
+                const viewport = page.getViewport({ scale: 1.3 });
+
+                const wrapper = document.createElement('div');
+                wrapper.className = 'pdf-page-wrapper';
+                wrapper.id = `page-wrapper-${pageNum}`;
+                wrapper.style.width = `${viewport.width}px`;
+                wrapper.style.height = `${viewport.height}px`;
+
+                // Left click for placement
+                wrapper.addEventListener('click', (event) => {
+                    if (!isPlacingMode) return;
+
+                    const rect = wrapper.getBoundingClientRect();
+                    const x = event.clientX - rect.left;
+                    const y = event.clientY - rect.top;
+
+                    pendingPlacement = { pageNum, x, y };
+                    renderPlaceholder(pageNum, x, y);
+
+                    document.getElementById('comment-input').disabled = false;
+                    document.getElementById('post-btn').disabled = false;
+                    document.getElementById('selection-status').innerHTML = `✅ Pin set on Page ${pageNum}! Type your note below. Press ESC to cancel.`;
+                    document.getElementById('selection-status').style.color = "#16a34a";
+
+                    exitPlacingMode();
+                });
+
+                // Prevent context menu (right-click)
+                wrapper.addEventListener('contextmenu', (event) => {
+                    event.preventDefault();
+                });
+
+                const canvas = document.createElement('canvas');
+                canvas.width = viewport.width;
+                canvas.height = viewport.height;
+                const context = canvas.getContext('2d');
+                wrapper.appendChild(canvas);
+
+                const pinsDiv = document.createElement('div');
+                pinsDiv.className = 'page-pins-layer';
+                pinsDiv.id = `pins-layer-${pageNum}`;
+                pinsDiv.style.position = 'absolute';
+                pinsDiv.style.top = '0';
+                pinsDiv.style.left = '0';
+                pinsDiv.style.width = '100%';
+                pinsDiv.style.height = '100%';
+                pinsDiv.style.pointerEvents = 'none';
+                wrapper.appendChild(pinsDiv);
+
+                root.appendChild(wrapper);
+
+                await page.render({ canvasContext: context, viewport: viewport }).promise;
+            }
+
+            fetchComments();
+        }
+
+        // Global Escape key listener to handle intelligent cancellation
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+                handleCancellationRequest();
+            }
+        });
+
+        function handleCancellationRequest() {
+            const commentText = document.getElementById('comment-input').value.trim();
+
+            if (pendingPlacement !== null) {
+                // AFTER lightbulb is placed
+                if (commentText.length > 0) {
+                    if (confirm("Discard Note?")) {
+                        resetPlacementState();
+                        exitPlacingMode();
+                    }
+                } else {
+                    resetPlacementState();
+                    exitPlacingMode();
+                }
+            } else {
+                // BEFORE lightbulb is placed
+                exitPlacingMode();
+            }
+        }
+
+        function renderPlaceholder(pageNum, x, y) {
+            clearPlaceholder();
+            const layer = document.getElementById(`pins-layer-${pageNum}`);
+            if (layer) {
+                const bulb = document.createElement('div');
+                bulb.className = 'placeholder-pin';
+                bulb.style.left = `${x}px`;
+                bulb.style.top = `${y}px`;
+                bulb.innerHTML = "💡";
+                layer.appendChild(bulb);
+            }
+        }
+
+        function clearPlaceholder() {
+            document.querySelectorAll('.placeholder-pin').forEach(el => el.remove());
+        }
+
+        function resetPlacementState() {
+            pendingPlacement = null;
+            clearPlaceholder();
+            // Note: We intentionally preserve author-input so the user's name stays filled in for subsequent notes!
+            document.getElementById('comment-input').value = '';
+            document.getElementById('comment-input').disabled = true;
+            document.getElementById('post-btn').disabled = true;
+            document.getElementById('selection-status').innerHTML = "Click 'Place Sticky Note' to drop a pin on the document.";
+            document.getElementById('selection-status').style.color = "#64748b";
+        }
+
+        function togglePlacingMode() {
+            if (isPlacingMode) {
+                handleCancellationRequest();
+            } else {
+                if (pendingPlacement !== null) {
+                    handleCancellationRequest();
+                    return;
+                }
+                isPlacingMode = true;
+                const btn = document.getElementById('place-mode-btn');
+                const container = document.getElementById('viewer-container');
+                const label = document.getElementById('mode-label');
+                const statusBox = document.getElementById('selection-status');
+
+                btn.classList.add('active');
+                container.classList.add('placing-mode');
+                label.innerText = "Tool: Placing Note";
+                statusBox.innerHTML = "🎯 Click anywhere on any page to place your note (Press Esc to cancel).";
+                statusBox.style.color = "#2563eb";
+            }
+        }
+
+        function exitPlacingMode() {
+            isPlacingMode = false;
+            document.getElementById('place-mode-btn').classList.remove('active');
+            document.getElementById('viewer-container').classList.remove('placing-mode');
+            document.getElementById('mode-label').innerText = "Tool: Navigation";
+        }
+
+        async function fetchComments() {
+            const res = await fetch(`/api/annotations/${filename}`);
+            const comments = await res.json();
+            const list = document.getElementById('comments-list');
+            
+            document.querySelectorAll('.page-pins-layer').forEach(el => {
+                const existingBulb = el.querySelector('.placeholder-pin');
+                el.innerHTML = '';
+                if (existingBulb) el.appendChild(existingBulb);
+            });
+            list.innerHTML = '';
+
+            if (comments.length === 0) {
+                list.innerHTML = '<p style="color: #64748b; font-size: 0.85rem; text-align: center;">No sticky notes yet. Place one on the document!</p>';
+                return;
+            }
+
+            comments.forEach((c, index) => {
+                const card = document.createElement('div');
+                card.className = 'comment-card';
+                card.id = `card-${c.id}`;
+                card.onclick = () => focusCommentAndPin(c.pageNum, c.id);
+                
+                let repliesHtml = '';
+                if (c.replies && c.replies.length > 0) {
+                    repliesHtml = '<div class="replies-container">';
+                    c.replies.forEach(r => {
+                        let rAuthor = (r.author && r.author.trim() !== "") ? escapeHtml(r.author) : '<em>Anonymous</em>';
+                        repliesHtml += `
+                            <div class="reply-item">
+                                <div class="reply-author">${rAuthor}</div>
+                                <div>${escapeHtml(r.text)}</div>
+                            </div>
+                        `;
+                    });
+                    repliesHtml += '</div>';
+                }
+
+                let authorDisplay = (c.author && c.author.trim() !== "") ? escapeHtml(c.author) : '<em>Anonymous</em>';
+
+                card.innerHTML = `
+                    <div class="comment-header">
+                        <div class="comment-author">📌 ${authorDisplay} (p. ${c.pageNum})</div>
+                        <button class="delete-btn" onclick="deleteComment('${c.id}', event)" title="Delete comment">Delete</button>
+                    </div>
+                    <div>${escapeHtml(c.text)}</div>
+                    ${repliesHtml}
+                    <div class="reply-input-box" onclick="event.stopPropagation()">
+                        <input type="text" id="reply-text-${c.id}" placeholder="Write a reply...">
+                        <button onclick="postReply('${c.id}')">Reply</button>
+                    </div>
+                `;
+                list.appendChild(card);
+
+                const pagePinsLayer = document.getElementById(`pins-layer-${c.pageNum}`);
+                if (pagePinsLayer) {
+                    const pin = document.createElement('div');
+                    pin.className = 'sticky-pin';
+                    pin.id = `pin-${c.id}`;
+                    pin.style.left = `${c.x}px`;
+                    pin.style.top = `${c.y}px`;
+                    pin.style.pointerEvents = 'auto';
+                    pin.innerText = index + 1;
+                    pin.title = `${c.author ? c.author : 'Anonymous'}: ${c.text}`;
+                    pin.onclick = (e) => {
+                        e.stopPropagation();
+                        focusCommentAndPin(c.pageNum, c.id);
+                    };
+                    pagePinsLayer.appendChild(pin);
+                }
+            });
+        }
+
+        async function postComment() {
+            let author = document.getElementById('author-input').value.trim();
+            if (!author) {
+                author = "Anonymous";
+            }
+            const text = document.getElementById('comment-input').value.trim();
+            if (!text || !pendingPlacement) return;
+
+            await fetch(`/api/annotations/${filename}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    author,
+                    text,
+                    pageNum: pendingPlacement.pageNum,
+                    x: pendingPlacement.x,
+                    y: pendingPlacement.y
+                })
+            });
+
+            resetPlacementState();
+            fetchComments();
+        }
+
+        async function postReply(commentId) {
+            const replyInput = document.getElementById(`reply-text-${commentId}`);
+            const text = replyInput.value.trim();
+            let author = document.getElementById('author-input').value.trim();
+            if (!author) {
+                author = "Anonymous";
+            }
+            if (!text) return;
+
+            await fetch(`/api/annotations/${filename}/reply`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ comment_id: commentId, author, text })
+            });
+
+            fetchComments();
+        }
+
+        async function deleteComment(commentId, event) {
+            event.stopPropagation();
+            if (!confirm("Are you sure you want to delete this comment?")) return;
+
+            await fetch(`/api/annotations/${filename}/${commentId}`, {
+                method: 'DELETE'
+            });
+
+            fetchComments();
+        }
+
+        function focusCommentAndPin(pageNum, id) {
+            const wrapper = document.getElementById(`page-wrapper-${pageNum}`);
+            if (wrapper) {
+                wrapper.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+
+            document.querySelectorAll('.comment-card').forEach(el => el.classList.remove('highlighted'));
+            const card = document.getElementById(`card-${id}`);
+            if (card) {
+                card.classList.add('highlighted');
+                card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+
+            const pin = document.getElementById(`pin-${id}`);
+            if (pin) {
+                pin.style.transform = "translate(-50%, -50%) scale(1.4)";
+                pin.style.background = "rgba(239, 68, 68, 0.9)";
+                setTimeout(() => {
+                    pin.style.transform = "translate(-50%, -50%) scale(1)";
+                    pin.style.background = "rgba(234, 179, 8, 0.9)";
+                }, 600);
+            }
+        }
+
+        function escapeHtml(str) {
+            return str.replace(/&/g, "&").replace(/</g, "<").replace(/>/g, ">");
+        }
+
+        renderPDF();
+    </script>
+</body>
+</html>

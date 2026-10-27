@@ -1,0 +1,14 @@
+{
+    "Class 01": {
+        "password": "pass01",
+        "pdfs": [
+            "Reading_-_Katharine_Rollwagen.pdf"
+        ]
+    },
+    "Class 03": {
+        "password": "pass03",
+        "pdfs": [
+            "Reading_-_Katharine_Rollwagen.pdf"
+        ]
+    }
+}
